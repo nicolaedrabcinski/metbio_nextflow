@@ -1,0 +1,4 @@
+sample,fastq
+mixture_1_shuffled,data/fastq/mixture_1_shuffled.fastq
+mixture_2_shuffled,data/fastq/mixture_2_shuffled.fastq
+mixture_3_shuffled,data/fastq/mixture_3_shuffled.fastq

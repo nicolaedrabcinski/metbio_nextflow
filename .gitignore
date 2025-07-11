@@ -1,0 +1,27 @@
+# Nextflow
+work/
+.nextflow*
+trace-*.txt
+timeline*.html
+report*.html
+dag*.png
+
+# Results
+results/
+
+# Tools (will be downloaded automatically)
+tools/
+
+# Temporary files
+*.tmp
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
