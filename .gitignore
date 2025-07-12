@@ -6,7 +6,8 @@ timeline*.html
 report*.html
 dag*.png
 
-# Results
+# Folders
+data/
 results/
 
 # Tools (will be downloaded automatically)
