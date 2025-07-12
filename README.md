@@ -53,7 +53,7 @@ mixture_2,/path/to/mixture_2_shuffled.fastq
 | `--lineages_fasta` | - | Reference lineages FASTA file |
 | `--outdir` | `results` | Output directory name |
 | `--filter_shuffled` | `false` | Only process files containing '_shuffled' |
-| `--fragment_length` | `900` | Estimated fragment length for single-end reads |
+| `--fragment_length` | `1000` | Estimated fragment length for single-end reads |
 | `--fragment_sd` | `30` | Standard deviation of fragment length |
 
 ## Pipeline Workflow
