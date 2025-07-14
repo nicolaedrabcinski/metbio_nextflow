@@ -55,7 +55,6 @@ mixture_2,/path/to/mixture_2_shuffled.fastq
 | `--fragment-length` | - | Estimated average length of fragments in the sequencing library. Equals the average length of amplicons in case the amplicons were not additionally fragmented during sequencing library preparation |
 | `--sd` | - | Estimated standard deviation of fragment length, or of the amplicons in case these were not additionally fragmented (default: -l, -s values are estimated from paired end data, but are required when using `--single`) |
 | `--threads` | `1` | Number of threads to use for index construction and quantification (integer) |
-=======
 | `--fastq_dir` | - | Directory containing FASTQ files |
 | `--input` | - | CSV file with sample definitions |
 | `--lineages_fasta` | - | Reference lineages FASTA file |
