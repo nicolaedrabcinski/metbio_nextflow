@@ -1,22 +1,19 @@
-# MetBio Nextflow Pipeline
+# MetBio-WGSP Bioinformatics Package for Wastewater Surveillance
 
-Automated pipeline for viral strain quantification using kallisto/lr-kallisto for wastewater genomic surveillance.
+Automated pipeline for viral strain quantification using kallisto and Freyja for wastewater genomic surveillance.
 
 ## Overview
 
-This pipeline implements the MetBio project's bioinformatics workflow for quantifying viral lineages in wastewater sequencing data. It uses kallisto's lr-kallisto algorithm optimized for long reads and high error rates, making it ideal for Oxford Nanopore sequencing data.
+This pipeline implements the bioinformatics workflow developed as part of the MetBio-WGSP project for wastewater sequencing data analysis. In its current state, the pipeline is capable of detecting and quantifying pathogen lineages in wastewater sequencing data (using the tools [kallisto](https://github.com/pachterlab/kallisto) and [Freyja](https://github.com/andersen-lab/Freyja) as detection/quantification engines). While kallisto takes a user-provided list of candidate pathogen genomes, Freyja uses an embedded database of genome references for the lineages of 10 different pathogens -- the pathogen needs to be specified during analysis. Haplotype reconstruction modules and other functionality, such as validation of lineage presence (including for low-abundance lineages), will be implemented in subsequent stages.
 
 ## Quick Start
 
 ```bash
 # Auto-scan FASTQ directory
-nextflow run main.nf --fastq_dir data/fastq --lineages_fasta lineages.fasta
+nextflow run main.nf --fastq_dir data/fastq --lineages_fasta data/lineages.fasta
 
 # Use existing CSV
-nextflow run main.nf --input samples.csv --lineages_fasta lineages.fasta
-
-# Process only shuffled files (recommended for toy dataset)
-nextflow run main.nf --fastq_dir data/reads_artic_small_overlaps --lineages_fasta data/lineages.fasta --filter_shuffled true
+nextflow run main.nf --input samples.csv --lineages_fasta data/lineages.fasta
 ```
 
 ## Requirements
@@ -48,22 +45,24 @@ mixture_2,/path/to/mixture_2_shuffled.fastq
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `--fastq_dir` | - | Directory containing FASTQ files |
-| `--input` | - | CSV file with sample definitions |
-| `--lineages_fasta` | - | Reference lineages FASTA file |
-| `--outdir` | `results` | Output directory name |
-| `--filter_shuffled` | `false` | Only process files containing '_shuffled' |
-| `--fragment_length` | `900` | Estimated fragment length for single-end reads |
-| `--fragment_sd` | `30` | Standard deviation of fragment length |
+| `--tool` | - | Specifies which of the bioinformatic instruments will be used. Currently available options are "kallisto" and "Freyja" |
+| `--fastq_dir` | - | Directory with FASTQ files. Not needed if `--input` is specified |
+| `--input` | - | CSV file with samples. Not needed if `--fastq_dir` is specified |
+| `--lineages_fasta` | - | Multi-fasta file containing all candidate pathogen genome references |
+| `--outdir` | `results` | Output directory |
+| `--k-mer-size` | `31` | k-mer length (integer (odd), max value: 31). Lower k-mer lengths might enable higher sensitivity of lineage detection (this is true especially for shorter reads), while potentially increasing the rate of falsely assigned reads |
+| `--single` | not included | Quantify single-end reads as opposed to paired-end reads |
+| `--fragment-length` | - | Estimated average length of fragments in the sequencing library. Equals the average length of amplicons in case the amplicons were not additionally fragmented during sequencing library preparation |
+| `--sd` | - | Estimated standard deviation of fragment length, or of the amplicons in case these were not additionally fragmented (default: -l, -s values are estimated from paired end data, but are required when using `--single`) |
+| `--threads` | `1` | Number of threads to use for index construction and quantification (integer) |
 
 ## Pipeline Workflow
 
-1. **Index Building**: Creates kallisto index from reference lineages
-2. **Quantification**: Runs lr-kallisto on each sample using:
-   - Single-end mode (`--single`)
-   - Long read parameters optimized for Nanopore data
-   - Fragment length estimation for wastewater samples
-3. **Visualization**: Generates summary plots and abundance matrices
+kallisto:
+
+1. **Index Building**: Creates kallisto index from reference lineages based on input genome references
+2. **Pseudoalignment**: Pseudoalignment of the reads (through comparisons of k-mers statistics), followed by estimation of the relative abundances of each genomic sequence (via expectation maximization)
+3. **Visualization**: Generation of summary plots and abundance matrices
 
 ## Output Structure
 
@@ -85,14 +84,6 @@ results/[input_name]/
 └── abundance_heatmap.png             # Sample vs lineage heatmap
 ```
 
-## Key Features
-
-- **lr-kallisto Integration**: Uses latest kallisto (v0.51+) with long-read support
-- **Wastewater Optimized**: Parameters tuned for wastewater surveillance data
-- **Flexible Input**: Auto-detection or manual sample specification
-- **Comprehensive Output**: Quantification + visualization in one workflow
-- **Reproducible**: Containerized with Nextflow for consistent results
-
 ## Usage Examples
 
 ```bash
@@ -100,20 +91,8 @@ results/[input_name]/
 nextflow run main.nf \
   --fastq_dir data/reads_artic_small_overlaps \
   --lineages_fasta data/lineages.fasta \
-  --filter_shuffled true
-
-# Production run with custom parameters
-nextflow run main.nf \
-  --input samples.csv \
-  --lineages_fasta references/sars_cov2_lineages.fasta \
-  --outdir analysis_2025 \
-  --fragment_length 1200 \
-  --fragment_sd 50
-
-# Resume failed run
-nextflow run main.nf -resume \
-  --fastq_dir data/reads \
-  --lineages_fasta lineages.fasta
+  --fragment-length 1000 \
+  --sd 30
 ```
 
 ## Performance Notes
@@ -132,23 +111,15 @@ nextflow run main.nf -resume \
 - Memory: Large datasets may require cluster execution
 
 **Validation:**
-The pipeline has been validated against MetBio project benchmarks showing high accuracy for both Illumina and Nanopore data, with lr-kallisto demonstrating optimal performance for long-read wastewater surveillance applications.
-
-## Citation
-
-If you use this pipeline, please cite:
-
-> MetBio Project - "Metagenomics and Bioinformatics tools for Wastewater-based Genomic Surveillance of viral Pathogens for early prediction of public health risks"
-> 
-> Funded by EU NextGenerationEU Program, Romania's National Recovery and Resilience Plan
-> Project number 760286/27.03.2024, code 167/31.07.2023
+The pipeline has been validated against MetBio project benchmarks showing high accuracy for both Illumina and Nanopore data, with kallisto demonstrating optimal performance for wastewater surveillance applications.
 
 ## Contributors
 
 - Victor Gordeev (Pipeline Design & Validation)
 - Nicolae Drabcinski (Nextflow Implementation)
-- MetBio Consortium
 
-## License
+## Acknowledgment
 
-This project is part of the MetBio initiative funded under Romania's National Recovery and Resilience Plan through the EU NextGenerationEU program.
+The development of this software package is supported by the grant of the Ministry of Research, Innovation and Digitization, under Romania's National Recovery and Resilience Plan, Funded by the European Union NextGenerationEU program no. 760286/27.03.2024, code 167/31.07.2023, within Pillar III, Component C9, Investment 8.
+
+The pipeline was developed as part of the project "Metagenomics and Bioinformatics tools for Wastewater-based Genomic Surveillance of viral Pathogens for early prediction of public health risks (MetBio-WGSP)"
