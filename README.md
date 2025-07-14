@@ -45,7 +45,6 @@ mixture_2,/path/to/mixture_2_shuffled.fastq
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-<<<<<<< HEAD
 | `--tool` | - | Specifies which of the bioinformatic instruments will be used. Currently available options are "kallisto" and "Freyja" |
 | `--fastq_dir` | - | Directory with FASTQ files. Not needed if `--input` is specified |
 | `--input` | - | CSV file with samples. Not needed if `--fastq_dir` is specified |
