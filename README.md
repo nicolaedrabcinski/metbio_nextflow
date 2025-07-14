@@ -63,7 +63,6 @@ mixture_2,/path/to/mixture_2_shuffled.fastq
 | `--filter_shuffled` | `false` | Only process files containing '_shuffled' |
 | `--fragment_length` | `1000` | Estimated fragment length for single-end reads |
 | `--fragment_sd` | `30` | Standard deviation of fragment length |
->>>>>>> e0c5f307b62d78f1c9692a0731006855049bae16
 
 ## Pipeline Workflow
 
