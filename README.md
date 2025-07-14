@@ -53,7 +53,7 @@ mixture_2,/path/to/mixture_2_shuffled.fastq
 | `--k-mer-size` | `31` | k-mer length (integer (odd), max value: 31). Lower k-mer lengths might enable higher sensitivity of lineage detection (this is true especially for shorter reads), while potentially increasing the rate of falsely assigned reads |
 | `--single` | not included | Quantify single-end reads as opposed to paired-end reads |
 | `--fragment-length` | - | Estimated average length of fragments in the sequencing library. Equals the average length of amplicons in case the amplicons were not additionally fragmented during sequencing library preparation |
-| `--sd` | - | Estimated standard deviation of fragment length, or of the amplicons in case these were not additionally fragmented (default: -l, -s values are estimated from paired end data, but are required when using `--single`) |
+| `--sd` | - | Estimated standard deviation of fragment length, or of the amplicons in case these were not additionally fragmented (default: --fragment_length, --sd values are estimated from paired end data, but are required when using `--single`) |
 | `--threads` | `1` | Number of threads to use for index construction and quantification (integer) |
 
 ## Pipeline Workflow
