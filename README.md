@@ -1,10 +1,10 @@
 # MetBio-WGSP Bioinformatics Package for Wastewater Surveillance
 
-Automated pipeline for viral strain quantification using kallisto and Freyja for wastewater genomic surveillance.
+A Nextflow pipeline for wastewater genomic surveillance intended for comprehensive and flexible analysis of targeted sequencing data and sensitive detection and quantification of known and novel pathogens.
 
 ## Overview
 
-This pipeline implements the bioinformatics workflow developed as part of the MetBio-WGSP project for wastewater sequencing data analysis. In its current state, the pipeline is capable of detecting and quantifying pathogen lineages in wastewater sequencing data (using the tools [kallisto](https://github.com/pachterlab/kallisto) and [Freyja](https://github.com/andersen-lab/Freyja) as detection/quantification engines). While kallisto takes a user-provided list of candidate pathogen genomes, Freyja uses an embedded database of genome references for the lineages of 10 different pathogens -- the pathogen needs to be specified during analysis. Haplotype reconstruction modules and other functionality, such as validation of lineage presence (including for low-abundance lineages), will be implemented in subsequent stages.
+This pipeline implements the bioinformatics workflow developed as part of the MetBio-WGSP project for wastewater sequencing data analysis. In its current state, the pipeline is capable of detecting and quantifying complex mixture of pathogens including closely related pathogen lineages from wastewater sequencing data using the tool kallisto as detection/quantification engine. Apart from the preprocessed FASTQ files, Kallisto takes a user-provided list of candidate reference pathogen genomes. The pipeline also incorporates a toy dataset (in the data folder of this repository) with precisely controlled and known mixture compositions, which allow testing the current and future functionality of this package, including instruments for pathogen/lineage detection, quantification, and haplotype reconstruction. Other components of the quantification module, haplotype reconstruction modules and other functionality, such as validation of lineage presence (including for low-abundance lineages), will be implemented in subsequent stages of the project.
 
 ## Quick Start
 
@@ -18,9 +18,28 @@ nextflow run main.nf --input samples.csv --lineages_fasta data/lineages.fasta
 
 ## Requirements
 
-- Nextflow ≥ 24.04
+- Nextflow ≥24.04
 - Python 3.6+ with pandas, matplotlib, seaborn, numpy
-- kallisto ≥ 0.51 (auto-downloaded if missing)
+- kallisto ≥0.51 (auto-downloaded if missing)
+
+## Input Data
+
+### Required Files
+
+1. **FASTQ files**: Raw sequencing data (single or paired-end)
+   - For Nanopore: Use files with "shuffled" in the filename
+   - Supported formats: `.fastq`, `.fastq.gz`, `.fq`, `.fq.gz`
+
+2. **Reference sequences**: FASTA file containing viral lineage genomes
+   - Location: `data/lineages/` directory
+   - Format: Multi-FASTA with lineage genomes
+
+### Test Dataset
+
+The pipeline includes a toy dataset for testing:
+- Long-read sequences with different overlap lengths
+- SARS-CoV-2 lineage references
+- Expected outputs for validation
 
 ## Input Formats
 
@@ -45,7 +64,6 @@ mixture_2,/path/to/mixture_2_shuffled.fastq
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `--tool` | - | Specifies which of the bioinformatic instruments will be used. Currently available options are "kallisto" and "Freyja" |
 | `--fastq_dir` | - | Directory with FASTQ files. Not needed if `--input` is specified |
 | `--input` | - | CSV file with samples. Not needed if `--fastq_dir` is specified |
 | `--lineages_fasta` | - | Multi-fasta file containing all candidate pathogen genome references |
@@ -95,6 +113,10 @@ nextflow run main.nf \
   --sd 30
 ```
 
+## Description of the embedded ONT toy dataset
+
+We simulated and embedded this dataset to allow testing the functionality of the pipeline (including detection, quantification and assembly of pathogen genomes). It contains 51 mixtures with precisely controlled mixture compositions and a known number of reads for each lineage of each mixture. Importantly, the dataset contains mixtures of various complexity, including samples containing a single lineage per mixture, the latter being intended as convenient controls for testing false positive results. The simulated FASTQ files, the exact composition of the ground truth mixtures, including the exact genome sequence for each lineage, but also the sequences of the primers used and the corresponding amplicons obtained for each lineage can be accessed from the "data" folder. The simulation procedure was as follows. Subsets of the ARTIC 5.3.2 primers covering the S gene, were chosen so as to achieve amplicon lengths of ~1000 bp and either small or big amplicon overlaps (~100 bp and ~400 bp respectively). All amplicons were successfully generated from the reference lineages included in the data folder using the publicly available in_silico_PCR tool (https://github.com/egonozer/in_silico_pcr) and the primer sequences. 3) These amplicons were used by the NanoSim simulator to generate long reads covering the full length of the amplicons (although this is a simplification compared to real ONT data since read lengths follow a distribution, this simplification is very useful to ensure an intuitive and known coverage level across the entire sequenced region). We trained the model for sequencing errors and base quality scores used by the NanoSim simulator on a sample obtained by sequencing synthetic RNA of the Wuhan strain of SARS-CoV-2 on a MinION device, R10.4.1 chemistry, followed by basecalling with guppy, in High Accuracy Mode. The public dataset containing the sample is accessible from https://zenodo.org/records/7786559). The authors report for this control sample an average PHRED score of 14.4 (with an accuracy of roughly 96.37%).
+
 ## Performance Notes
 
 - Processing time: ~20-30 seconds for 102 samples (toy dataset)
@@ -111,7 +133,7 @@ nextflow run main.nf \
 - Memory: Large datasets may require cluster execution
 
 **Validation:**
-The pipeline has been validated against MetBio project benchmarks showing high accuracy for both Illumina and Nanopore data, with kallisto demonstrating optimal performance for wastewater surveillance applications.
+Kallisto has been extensively tested against roughly 20 other competing tools as part of the MetBio-WGSP project benchmarks, showing high accuracy for both Illumina and especially for long Nanopore reads, as well as high adaptability for monitoring pathogens other than SARS-CoV-2.
 
 ## Contributors
 
