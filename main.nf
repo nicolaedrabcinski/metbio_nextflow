@@ -3,21 +3,20 @@
 nextflow.enable.dsl = 2
 
 // Parameters by default
-params.tool = null                    // NEW: kallisto or freyja
+params.tool = null
 params.input = null
 params.fastq_dir = null
 params.lineages_fasta = null
-params.reference_fasta = null         // NEW: For Freyja
+params.reference_fasta = null
 params.fasta_dir = null
 params.index = null
 params.outdir = 'results'
 params.help = false
 params.filter_shuffled = false
 params.kmer_size = 31
-params.fragment_length = null         // NEW: For kallisto
-params.sd = null                      // NEW: For kallisto
-params.threads = 1                    // NEW: Number of threads
-params.freyja_eps = "0.00000001"      // NEW: Freyja epsilon
+params.fragment_length = null
+params.sd = null
+params.threads = 1
 params.create_plots = true
 
 // Создать папку результатов на основе имени входной папки
@@ -59,23 +58,28 @@ def helpMessage() {
     --fasta_dir         Directory with individual FASTA files (legacy)
     --index             Pre-built kallisto index file
     --outdir            Output directory (default: results)
-    --filter_shuffled   Only use files with '_shuffled' in name (default: false)
-    --kmer_size         K-mer size for kallisto (default: 31)
-    --fragment_length   Fragment length for kallisto single-end mode
-    --sd                Fragment standard deviation for kallisto
     --threads           Number of threads (default: 1)
-    --freyja_eps        Freyja epsilon parameter (default: 0.00000001)
-    --create_plots      Create visualization plots (default: true)
+    
+    Freyja-specific parameters:
+    --refname           Reference name (default: NC_045512.2)
+    --minq              Minimum base quality (default: 20)
+    --freyja_eps        Epsilon for demix (default: 0.00000001)
+    --covcut            Coverage cutoff (default: 10)
+    --depthcutoff       Depth cutoff (default: 0)
+    --confirmedonly     Use only confirmed lineages (default: false)
+    --pathogen          Pathogen type (default: SC2)
+    --mincov            Minimum coverage for aggregate (default: 60)
+    --thresh            Threshold for plotting (default: 0.01)
     
     Examples:
     # Kallisto workflow
     nextflow run main.nf --tool kallisto --fastq_dir data/reads_artic_small_overlaps --lineages_fasta data/lineages.fasta
     
     # Freyja workflow  
-    nextflow run main.nf --tool freyja --fastq_dir data/reads_artic_small_overlaps --reference_fasta data/NC_045512_2.fasta
+    nextflow run main.nf --tool freyja --fastq_dir data/reads_artic_small_overlaps --reference_fasta data/NC_045512_2.fasta -profile docker
     
-    # Kallisto with custom parameters
-    nextflow run main.nf --tool kallisto --fastq_dir data/reads --lineages_fasta lineages.fasta --kmer_size 21 --fragment_length 1000 --sd 30
+    # Freyja with custom parameters
+    nextflow run main.nf --tool freyja --fastq_dir data/reads --reference_fasta ref.fasta --covcut 5 --mincov 50 --threads 8 -profile docker
     ========================================
     """.stripIndent()
 }
@@ -106,6 +110,17 @@ if (params.tool == "freyja" && !params.reference_fasta) {
     exit 1
 }
 
+// Validate file existence
+if (params.reference_fasta && !file(params.reference_fasta).exists()) {
+    log.error "Reference FASTA file not found: ${params.reference_fasta}"
+    exit 1
+}
+
+if (params.lineages_fasta && !file(params.lineages_fasta).exists()) {
+    log.error "Lineages FASTA file not found: ${params.lineages_fasta}"
+    exit 1
+}
+
 // Logging
 log.info """
 ========================================
@@ -117,9 +132,6 @@ input          : ${params.input ?: 'Not specified'}
 lineages_fasta : ${params.lineages_fasta ?: 'Not specified'}
 reference_fasta: ${params.reference_fasta ?: 'Not specified'}
 outdir         : ${final_outdir}
-kmer_size      : ${params.kmer_size}
-fragment_length: ${params.fragment_length ?: 'Not specified'}
-fragment_sd    : ${params.sd ?: 'Not specified'}
 threads        : ${params.threads}
 ========================================
 """
@@ -129,12 +141,55 @@ include { DOWNLOAD_KALLISTO } from './modules/download_kallisto.nf'
 include { GENERATE_CSV_FROM_FASTQ_DIR } from './modules/generate_csv_kallisto.nf'
 include { KALLISTO_INDEX } from './modules/kallisto_index.nf'
 include { LR_KALLISTO } from './modules/lr_kallisto.nf'
-include { INSTALL_FREYJA } from './modules/install_freyja.nf'
-include { INSTALL_MINIMAP2 } from './modules/install_minimap2.nf'
-include { FREYJA_ALIGN; FREYJA_VARIANTS; FREYJA_DEMIX } from './modules/workflow_freyja.nf'
+include { FREYJA_ALIGN; FREYJA_VARIANTS; FREYJA_DEMIX; FREYJA_UPDATE; FREYJA_AGGREGATE; FREYJA_PLOT } from './modules/workflow_freyja.nf'
 include { CREATE_PLOTS } from './modules/create_plots.nf'
 
+// Helper process to pre-pull Docker images
+process PULL_DOCKER_IMAGES {
+    tag "Pre-pulling Docker images"
+    
+    output:
+    path "docker_ready.flag", emit: flag
+    
+    when:
+    workflow.profile.contains('docker')
+    
+    script:
+    """
+    echo "🐳 Pre-pulling required Docker images for reproducibility..."
+    
+    if [ "${params.tool}" == "freyja" ]; then
+        echo "📦 Pulling Freyja Docker image..."
+        docker pull staphb/freyja:latest || {
+            echo "⚠️  Warning: Failed to pull staphb/freyja:latest"
+            echo "Pipeline will attempt to use cached image or pull during execution"
+        }
+        
+        echo "📦 Pulling minimap2 Docker image..."
+        docker pull quay.io/biocontainers/minimap2:2.28--he4a0461_2 || {
+            echo "⚠️  Warning: Failed to pull minimap2 image"
+            echo "Pipeline will attempt to use cached image or pull during execution"
+        }
+    elif [ "${params.tool}" == "kallisto" ]; then
+        echo "📦 Pulling Kallisto Docker image..."
+        docker pull quay.io/biocontainers/kallisto:0.51.1--h6ad9e81_1 || {
+            echo "⚠️  Warning: Failed to pull kallisto image"
+            echo "Pipeline will attempt to use cached image or pull during execution"
+        }
+    fi
+    
+    touch docker_ready.flag
+    echo "✅ Docker images ready"
+    """
+}
+
 workflow {
+    // Pre-pull Docker images if using docker profile (for reproducibility)
+    if (workflow.profile.contains('docker')) {
+        log.info "🐳 Docker profile detected - pre-pulling images for reproducibility..."
+        PULL_DOCKER_IMAGES()
+    }
+    
     // Prepare input samples
     if (params.fastq_dir) {
         log.info "Auto-generating CSV from FASTQ directory: ${params.fastq_dir}"
@@ -154,7 +209,7 @@ workflow {
 
     // Branch workflow based on tool selection
     if (params.tool == "kallisto") {
-        // Kallisto workflow (existing working code)
+        // Kallisto workflow
         if (file('./tools/kallisto/kallisto').exists()) {
             kallisto_path = Channel.value(file('./tools/kallisto/kallisto'))
             log.info "Using existing kallisto: ./tools/kallisto/kallisto"
@@ -193,37 +248,48 @@ workflow {
         results_ch = quantification_results.results
         
     } else if (params.tool == "freyja") {
-        // Freyja workflow (new)
+        // Freyja workflow
         log.info "Running Freyja workflow"
         
-        INSTALL_FREYJA()
-        INSTALL_MINIMAP2()
+        // Update Freyja database first (optional but recommended)
+        // FREYJA_UPDATE()
         
-        // Alignment step
-        FREYJA_ALIGN(
+        // Create file channel for reference
+        reference_file = Channel.value(file(params.reference_fasta))
+        
+        // Alignment step (uses minimap2 from Docker)
+        aligned_ch = FREYJA_ALIGN(
             input_ch,
-            INSTALL_MINIMAP2.out.minimap2_bin,
-            params.reference_fasta
+            reference_file
         )
         
-        // Variant calling
-        FREYJA_VARIANTS(
-            FREYJA_ALIGN.out.bam,
-            INSTALL_FREYJA.out.freyja_bin,
-            params.reference_fasta
+        // Variant calling (uses freyja from Docker)
+        variants_ch = FREYJA_VARIANTS(
+            aligned_ch.aligned,
+            reference_file
         )
         
-        // Demixing
-        FREYJA_DEMIX(
-            FREYJA_VARIANTS.out.variants_depths,
-            INSTALL_FREYJA.out.freyja_bin
+        // Demixing (uses freyja from Docker)
+        demix_ch = FREYJA_DEMIX(
+            variants_ch.variants_depths
         )
         
-        results_ch = FREYJA_DEMIX.out.results
+        // Aggregate results from all samples
+        all_demix = demix_ch.results
+            .map { sample, tsv -> tsv }
+            .unique { it.name }
+            .collect()
+        
+        aggregated_ch = FREYJA_AGGREGATE(all_demix)
+        
+        // Create Freyja plots
+        FREYJA_PLOT(aggregated_ch.aggregated)
+        
+        results_ch = demix_ch.results
     }
     
-    // Create plots (works for both workflows)
-    if (params.create_plots) {
+    // Create plots (works for both workflows, but mainly for Kallisto)
+    if (params.create_plots && params.tool == "kallisto") {
         results_with_unique_names = results_ch
             .map { sample, dir -> 
                 def unique_name = dir.toString().replaceAll(/.*\/work\//, '').replaceAll(/\//, '_')
@@ -236,7 +302,7 @@ workflow {
         CREATE_PLOTS(results_with_unique_names)
     }
     
-    // Output status
+    // Output status.
     results_ch.subscribe { sample, result_dir ->
         log.info "✅ Sample ${sample} processed: ${result_dir}"
     }

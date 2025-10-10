@@ -6,42 +6,23 @@ process INSTALL_MINIMAP2 {
     
     script:
     """
-    #!/bin/bash
-    set -e
+    echo "📥 Downloading minimap2..."
     
-    echo "🧬 Installing minimap2..."
+    # Download minimap2 binary
+    wget -q https://github.com/lh3/minimap2/releases/download/v2.24/minimap2-2.24_x64-linux.tar.bz2
+    tar -xjf minimap2-2.24_x64-linux.tar.bz2
     
-    # Check if minimap2 is already available
-    if command -v minimap2 &> /dev/null; then
-        echo "✅ minimap2 found in system PATH"
-        mkdir -p minimap2
-        ln -sf \$(which minimap2) minimap2/minimap2
+    # Move binary to expected location
+    mv minimap2-2.24_x64-linux/minimap2 ./minimap2
+    chmod +x minimap2
+    
+    # Test installation
+    echo "🧪 Testing minimap2 installation..."
+    if ./minimap2 --version; then
+        echo "✅ minimap2 installation successful!"
     else
-        # Download and install minimap2
-        mkdir -p minimap2
-        cd minimap2
-        
-        # Determine architecture
-        ARCH=\$(uname -m)
-        if [[ "\$ARCH" == "x86_64" ]]; then
-            MINIMAP2_URL="https://github.com/lh3/minimap2/releases/download/v2.26/minimap2-2.26_x64-linux.tar.bz2"
-            wget -q "\$MINIMAP2_URL" -O minimap2.tar.bz2
-            tar -xjf minimap2.tar.bz2 --strip-components=1
-            rm minimap2.tar.bz2
-        else
-            # Compile from source for other architectures
-            echo "📦 Compiling minimap2 from source for \$ARCH..."
-            wget -q https://github.com/lh3/minimap2/archive/v2.26.tar.gz -O minimap2.tar.gz
-            tar -xzf minimap2.tar.gz --strip-components=1
-            rm minimap2.tar.gz
-            make
-        fi
-        
-        cd ..
+        echo "❌ ERROR: minimap2 test failed!"
+        exit 1
     fi
-    
-    # Verify installation
-    ./minimap2/minimap2 --version
-    echo "✅ minimap2 installed successfully!"
     """
 }
