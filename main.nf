@@ -18,6 +18,7 @@ params.fragment_length = null
 params.sd = null
 params.threads = 1
 params.create_plots = true
+params.run_viloca = false  // Enable VILOCA local haplotype reconstruction
 
 // Создать папку результатов на основе имени входной папки
 def getOutputDir() {
@@ -70,6 +71,7 @@ def helpMessage() {
     --pathogen          Pathogen type (default: SC2)
     --mincov            Minimum coverage for aggregate (default: 60)
     --thresh            Threshold for plotting (default: 0.01)
+    --run_viloca        Enable VILOCA local haplotype reconstruction (default: false)
     
     Examples:
     # Kallisto workflow
@@ -77,6 +79,9 @@ def helpMessage() {
     
     # Freyja workflow  
     nextflow run main.nf --tool freyja --fastq_dir data/reads_artic_small_overlaps --reference_fasta data/NC_045512_2.fasta -profile docker
+    
+    # Freyja with VILOCA (use mixed profile for Docker + conda)
+    nextflow run main.nf --tool freyja --fastq_dir data/reads_artic_small_overlaps --reference_fasta data/NC_045512_2.fasta --run_viloca -profile mixed
     
     # Freyja with custom parameters
     nextflow run main.nf --tool freyja --fastq_dir data/reads --reference_fasta ref.fasta --covcut 5 --mincov 50 --threads 8 -profile docker
@@ -141,8 +146,17 @@ include { DOWNLOAD_KALLISTO } from './modules/download_kallisto.nf'
 include { GENERATE_CSV_FROM_FASTQ_DIR } from './modules/generate_csv_kallisto.nf'
 include { KALLISTO_INDEX } from './modules/kallisto_index.nf'
 include { LR_KALLISTO } from './modules/lr_kallisto.nf'
-include { FREYJA_ALIGN; FREYJA_VARIANTS; FREYJA_DEMIX; FREYJA_UPDATE; FREYJA_AGGREGATE; FREYJA_PLOT } from './modules/workflow_freyja.nf'
-include { CREATE_PLOTS } from './modules/create_plots.nf'
+include { 
+    FREYJA_ALIGN;
+    FREYJA_VARIANTS;
+    FREYJA_DEMIX;
+    FREYJA_AGGREGATE;
+    FREYJA_PLOT 
+} from './modules/workflow_freyja'
+include { VILOCA_WORKFLOW } from './modules/workflow_viloca.nf'
+include { CREATE_PLOTS } from './modules/create_plots'
+include { GENERATE_RESULT_TABLE_FREYJA } from './modules/generate_result_table_freyja'
+include { CREATE_WHO_PLOTS } from './modules/create_who_plots'
 
 // Helper process to pre-pull Docker images
 process PULL_DOCKER_IMAGES {
@@ -282,10 +296,25 @@ workflow {
         
         aggregated_ch = FREYJA_AGGREGATE(all_demix)
         
+        // Generate Freyja results table CSV after aggregation
+        GENERATE_RESULT_TABLE_FREYJA(aggregated_ch.aggregated)
+        
         // Create Freyja plots
         FREYJA_PLOT(aggregated_ch.aggregated)
         
+        // Create WHO classification plots
+        CREATE_WHO_PLOTS(GENERATE_RESULT_TABLE_FREYJA.out.results_table)
+        
         results_ch = demix_ch.results
+        
+        // Run VILOCA if enabled
+        if (params.run_viloca) {
+            log.info "Running VILOCA local haplotype reconstruction..."
+            viloca_results = VILOCA_WORKFLOW(
+                aligned_ch.aligned,
+                reference_file
+            )
+        }
     }
     
     // Create plots (works for both workflows, but mainly for Kallisto)

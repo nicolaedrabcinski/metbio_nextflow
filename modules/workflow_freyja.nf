@@ -1,7 +1,6 @@
 process FREYJA_ALIGN {
     tag "Aligning ${sample_id}"
     publishDir "${params.final_outdir}/alignments", mode: 'copy'
-    // НЕ указываем container здесь, потому что он указан в nextflow.config
     
     input:
     tuple val(sample_id), path(fastq)
@@ -15,8 +14,6 @@ process FREYJA_ALIGN {
     echo "Aligning ${sample_id} to reference..."
     echo "FASTQ file: ${fastq}"
     echo "Reference: ${reference_fasta}"
-    
-    # УБРАЛИ установку через conda - инструменты должны быть в Docker-образе!
     
     # Check if minimap2 is available
     if ! command -v minimap2 &> /dev/null; then
@@ -70,7 +67,7 @@ process FREYJA_ALIGN {
 }
 
 process FREYJA_VARIANTS {
-    tag "Calling variants ${sample_id}"
+    tag "Variant calling for ${sample_id}"
     publishDir "${params.final_outdir}/variants", mode: 'copy'
     container 'staphb/freyja:latest'
     
@@ -85,9 +82,15 @@ process FREYJA_VARIANTS {
     def refname = params.refname ?: 'NC_045512.2'
     def minq = params.minq ?: 20
     """
-    echo "Calling variants for ${sample_id}..."
+    echo "Running variant calling for ${sample_id}..."
     echo "BAM file: ${bam}"
     echo "Reference: ${reference_fasta}"
+    
+    # Check if freyja is available
+    if ! command -v freyja &> /dev/null; then
+        echo "ERROR: freyja not found in container"
+        exit 1
+    fi
     
     # Check file existence
     if [ ! -f "${bam}" ]; then
@@ -265,9 +268,9 @@ process FREYJA_AGGREGATE {
     
     echo "Found \$file_count demix files to aggregate"
     
-    # Run aggregate (согласно freyja 2.0.0 help)
-    freyja aggregate \
-        demix_files/ \
+    # Run aggregate
+    freyja aggregate \\
+        demix_files/ \\
         --output aggregated_freyja.tsv
     
     echo "Aggregation completed"
@@ -289,7 +292,6 @@ process FREYJA_PLOT {
     path "freyja_plot.png", optional: true, emit: plot_png
     
     script:
-    // def mincov = params.mincov ?: 60
     def thresh = params.thresh ?: 0.01
     def pathogen = params.pathogen ?: 'SC2'
     def lineage = params.lineage ? "--lineage ${params.lineage}" : ''
@@ -299,24 +301,10 @@ process FREYJA_PLOT {
     # Create plot
     freyja plot \\
         ${aggregated_results} \\
-        --output freyja_plot.pdf \\
-        --mincov 1 \\
+        --output freyja_plot \\
         --thresh ${thresh} \\
         --pathogen ${pathogen} \\
-        ${lineage} || {
-        echo "⚠️  Warning: Freyja plot generation failed"
-        echo "Possible reasons:"
-        echo "  - Too many lineages detected (try --thresh 0.10 or higher)"
-        echo "  - Insufficient coverage (samples below --mincov threshold)"
-        echo ""
-        echo "Pipeline continues - other results are available in: ${params.final_outdir}"
-        exit 0
-        }
-    
-    # Try to convert to PNG if possible
-    if command -v convert &> /dev/null; then
-        convert -density 300 freyja_plot.pdf freyja_plot.png || true
-    fi
+        ${lineage}
     
     echo "Plot creation completed"
     """

@@ -1,0 +1,12 @@
+Metric,Value
+MAE (%),4.476635714285714
+RMSE (%),9.277252897865424
+R²,0.8527885681756371
+Pearson r,0.9496981143634851
+Pearson p-value,7.041843995919818e-213
+Spearman ρ,0.6461522448061797
+Spearman p-value,5.2989898031001116e-51
+Mean Relative Error (%),6669.918521711722
+Median Relative Error (%),43.603461481303654
+Total Comparisons,420.0
+Comparisons with True > 0.1%,332.0
