@@ -85,30 +85,24 @@ process VILOCA_RUN {
 process VILOCA_AGGREGATE {
     tag "Aggregating VILOCA results"
     publishDir "${params.final_outdir}/viloca", mode: 'copy'
-    
-    // Read published per-sample output directories directly to avoid staging name collisions
+
     input:
-    // no inputs; aggregator will scan the published output directory
-    
+    path result_dirs  // collected *_viloca_outputs directories from VILOCA_RUN
+
     output:
     path("viloca_summary.csv"), emit: summary
     path("viloca_aggregated.log"), emit: log
-    
+
     script:
     """
-    echo "Aggregating VILOCA results from published outputs..." > viloca_aggregated.log
-
-    # Create header
+    echo "Aggregating VILOCA results..." > viloca_aggregated.log
     echo "sample,haplotype_count,snv_count,total_coverage" > viloca_summary.csv
 
-    # Iterate over published per-sample directories
-    for result_dir in ${params.final_outdir}/viloca/*_viloca_outputs; do
+    for result_dir in *_viloca_outputs; do
         if [ -d "\$result_dir" ]; then
-            sample=\$(basename "\$result_dir")
-            
-            # Count haplotypes from CSV files
-            haplotype_count=0
+            sample=\$(basename "\$result_dir" | sed 's/_viloca_outputs\$//')
             snv_count=0
+            haplotype_count=0
 
             if [ -f "\$result_dir/snv/SNVs_0.010000_final.csv" ]; then
                 snv_count=\$(tail -n +2 "\$result_dir/snv/SNVs_0.010000_final.csv" | wc -l)
@@ -129,19 +123,19 @@ workflow VILOCA_WORKFLOW {
     take:
     aligned_ch    // Channel of [sample_id, bam, bai]
     reference_file
-    
+
     main:
-    // Run VILOCA on all aligned samples
-    viloca_results = VILOCA_RUN(
-        aligned_ch,
-        reference_file
-    )
-    
-    // Aggregate results (no input channel)
-    aggregated = VILOCA_AGGREGATE()
-    
+    viloca_results = VILOCA_RUN(aligned_ch, reference_file)
+
+    // Collect all output directories through the channel — no filesystem race
+    collected_dirs = viloca_results.results
+        .map { sample_id, outdir -> outdir }
+        .collect()
+
+    aggregated = VILOCA_AGGREGATE(collected_dirs)
+
     emit:
     results = viloca_results.results
-    logs = viloca_results.logs
+    logs    = viloca_results.logs
     summary = aggregated.summary
 }

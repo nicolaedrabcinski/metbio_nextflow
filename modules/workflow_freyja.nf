@@ -1,7 +1,8 @@
 process FREYJA_ALIGN {
     tag "Aligning ${sample_id}"
     publishDir "${params.final_outdir}/alignments", mode: 'copy'
-    
+    container 'quay.io/biocontainers/mulled-v2-66534bcbb7031a148b13e2ad42583020b9cd25c4:1679e915ddb9d6b4abda91880c4b48857d471bd8-0'
+
     input:
     tuple val(sample_id), path(fastq)
     path reference_fasta
@@ -39,7 +40,7 @@ process FREYJA_ALIGN {
     
     # Run minimap2 alignment
     echo "Running minimap2 alignment..."
-    minimap2 -ax sr ${reference_fasta} ${fastq} | \\
+    minimap2 -ax ${params.minimap2_preset} ${reference_fasta} ${fastq} | \\
         samtools view -bS - | \\
         samtools sort -o ${sample_id}.sorted.bam -
     
@@ -154,12 +155,13 @@ process FREYJA_DEMIX {
     tag "Demixing ${sample_id}"
     publishDir "${params.final_outdir}/demix", mode: 'copy'
     container 'staphb/freyja:latest'
+    errorStrategy 'ignore'
     
     input:
     tuple val(sample_id), path(variants), path(depths)
     
     output:
-    tuple val(sample_id), path("${sample_id}_demixed.tsv"), emit: results
+    tuple val(sample_id), path("${sample_id}_demixed.tsv"), optional: true, emit: results
     
     script:
     def eps = params.freyja_eps ?: "0.00000001"
@@ -173,9 +175,14 @@ process FREYJA_DEMIX {
     
     # Check if variants file has content
     if [ ! -s "${variants}" ]; then
-        echo "WARNING: Variants file is empty, creating empty demix result"
-        echo -e "summarized\tlineages\tabundances\tresid\tcoverage" > ${sample_id}_demixed.tsv
-        echo -e "0.0\tundetermined\t1.0\t0.0\t0.0" >> ${sample_id}_demixed.tsv
+        echo "WARNING: Variants file is empty for ${sample_id}, skipping demix"
+        exit 0
+    fi
+
+    # Check minimum variant count for solver
+    variant_count=\$(tail -n +2 "${variants}" | wc -l)
+    if [ "\$variant_count" -lt 2 ]; then
+        echo "WARNING: Too few variants (\$variant_count) for ${sample_id}, skipping demix"
         exit 0
     fi
     
@@ -307,5 +314,126 @@ process FREYJA_PLOT {
         ${lineage}
     
     echo "Plot creation completed"
+    """
+}
+
+process COVERAGE_PLOT {
+    tag "Coverage ${sample_id}"
+    publishDir "${params.final_outdir}/coverage", mode: 'copy'
+    container 'staphb/samtools:latest'
+
+    input:
+    tuple val(sample_id), path(bam), path(bai)
+
+    output:
+    tuple val(sample_id), path("${sample_id}.coverage.png"), emit: plot
+    tuple val(sample_id), path("${sample_id}.depth.tsv"),   emit: depth
+
+    script:
+    """
+    echo "Calculating coverage depth for ${sample_id}..."
+
+    # Get per-base depth (forward + reverse separately)
+    samtools depth -a -d 0 ${bam} > ${sample_id}.depth.tsv
+
+    # Get forward strand depth
+    samtools view -F 16 -b ${bam} | samtools depth -a -d 0 - > ${sample_id}.fwd.tsv
+    # Get reverse strand depth
+    samtools view -f 16 -b ${bam} | samtools depth -a -d 0 - > ${sample_id}.rev.tsv
+
+    python3 - << 'PYEOF'
+import sys
+import numpy as np
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
+
+sample_id = "${sample_id}"
+
+def load_depth(path):
+    pos, depth = [], []
+    try:
+        with open(path) as f:
+            for line in f:
+                parts = line.strip().split('\\t')
+                if len(parts) >= 3:
+                    pos.append(int(parts[1]))
+                    depth.append(int(parts[2]))
+    except:
+        pass
+    return np.array(pos), np.array(depth)
+
+pos_all, dep_all = load_depth("${sample_id}.depth.tsv")
+pos_fwd, dep_fwd = load_depth("${sample_id}.fwd.tsv")
+pos_rev, dep_rev = load_depth("${sample_id}.rev.tsv")
+
+if len(pos_all) == 0:
+    fig, ax = plt.subplots(figsize=(12, 4))
+    ax.text(0.5, 0.5, 'No coverage data', ha='center', va='center', fontsize=14)
+    ax.axis('off')
+    plt.savefig(f"{sample_id}.coverage.png", dpi=150)
+    plt.close()
+    sys.exit(0)
+
+# Genome length and coverage stats
+genome_len    = pos_all[-1] if len(pos_all) > 0 else 1
+mean_cov      = float(np.mean(dep_all)) if len(dep_all) > 0 else 0
+pct_covered   = float(np.mean(dep_all > 0) * 100) if len(dep_all) > 0 else 0
+n_reads_fwd   = int(np.sum(dep_fwd)) if len(dep_fwd) > 0 else 0
+n_reads_rev   = int(np.sum(dep_rev)) if len(dep_rev) > 0 else 0
+
+fig, ax = plt.subplots(figsize=(14, 5))
+
+# Fill forward strand (cyan, like Pavian)
+if len(pos_fwd) > 0:
+    ax.fill_between(pos_fwd, dep_fwd, color='#00BCD4', alpha=0.85,
+                    linewidth=0, label='Forward strand')
+
+# Fill reverse strand (pink, like Pavian) — plotted as negative for visual separation
+# But shown as positive overlay (Pavian shows both stacked)
+if len(pos_rev) > 0:
+    ax.fill_between(pos_rev, dep_rev, color='#F06292', alpha=0.55,
+                    linewidth=0, label='Reverse strand')
+
+# Total depth line
+ax.plot(pos_all, dep_all, color='#1565C0', linewidth=0.4, alpha=0.6)
+
+# Annotations
+ax.set_xlabel('Position (bp)', fontsize=11)
+ax.set_ylabel('Coverage depth', fontsize=11)
+ax.set_title(
+    f'Coverage — {sample_id}   '
+    f'[{pos_all[0]:,}–{genome_len:,} bp covered]   '
+    f'avg cov: {mean_cov:.0f}x',
+    fontsize=11, fontweight='bold'
+)
+ax.set_xlim(pos_all[0], genome_len)
+ax.set_ylim(0)
+
+fwd_patch = mpatches.Patch(color='#00BCD4', alpha=0.85, label=f'Forward ({n_reads_fwd:,} reads)')
+rev_patch = mpatches.Patch(color='#F06292', alpha=0.55, label=f'Reverse ({n_reads_rev:,} reads)')
+ax.legend(handles=[fwd_patch, rev_patch], loc='upper right', fontsize=9)
+
+ax.grid(axis='y', alpha=0.25, linewidth=0.5)
+ax.spines['top'].set_visible(False)
+ax.spines['right'].set_visible(False)
+
+# Add stats box (like Pavian)
+stats_text = (f"{pos_all[0]:,} / {genome_len:,} bp covered\\n"
+              f"avg cov: {mean_cov:.0f}x\\n"
+              f"{pct_covered:.1f}% covered")
+ax.text(0.98, 0.95, stats_text, transform=ax.transAxes,
+        ha='right', va='top', fontsize=8,
+        bbox=dict(boxstyle='round,pad=0.4', facecolor='white',
+                  edgecolor='#cccccc', alpha=0.9))
+
+plt.tight_layout()
+plt.savefig(f"{sample_id}.coverage.png", dpi=200, bbox_inches='tight', facecolor='white')
+plt.close()
+print(f"Coverage plot saved: {sample_id}.coverage.png")
+PYEOF
+
+    echo "Coverage plot completed for ${sample_id}"
     """
 }

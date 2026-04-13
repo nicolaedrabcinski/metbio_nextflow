@@ -5,13 +5,24 @@ trace-*.txt
 timeline*.html
 report*.html
 dag*.png
+nextflow_run.log
 
-# Folders
+# Data & results (large files, not source code)
 data/
 results/
+custom_results/
 
-# Tools (will be downloaded automatically)
+# Analysis outputs (generated plots, notebooks with outputs)
+analysis/
+
+# Utility scripts (not core pipeline)
+scripts/
+
+# Tools (downloaded automatically)
 tools/
+
+# Pipeline logs
+logs/
 
 # Temporary files
 *.tmp
@@ -26,4 +37,12 @@ tools/
 # OS
 .DS_Store
 Thumbs.db
-custom_results/
+
+# VILOCA build artifacts
+VILOCA/build/
+
+# Test results (generated during test runs)
+test_results/
+
+# Jupyter checkpoints
+.ipynb_checkpoints/
